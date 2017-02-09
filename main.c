@@ -15,20 +15,21 @@ char str3[] = "It is a 1!!!";
 int g_pendingInterrupt = 0;
 
 void setupGPIO(){
+	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
 	//Input from PA0
-	GPIOA->MODER &= !GPIO_MODER_MODER0;
-	//Set Speed
-	GPIOA->OSPEEDR |= GPIO_OSPEEDER_OSPEEDR0;
-	//Pulldown
-	GPIOA->PUPDR &= !GPIO_PUPDR_PUPDR0_0;
-	GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;
+	GPIOA->MODER &= ~GPIO_MODER_MODER0;
+	////Set Speed
+	//GPIOA->OSPEEDR |= GPIO_OSPEEDER_OSPEEDR0;
+	////Pulldown
+	//GPIOA->PUPDR &= ~GPIO_PUPDR_PUPDR0_0;
+	//GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;
 	
 	//GPIOD->AFR[0] |= 0;
 }
 
 void setupInterrupt(){
 	//Enable the system Clock
-	RCC->APB2ENR |= (1 << 14);
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN | RCC_APB2ENR_SYSCFGEN;
 	
 	//Set PA0 to EXTI0
 	SYSCFG->EXTICR[0] |= SYSCFG_EXTICR1_EXTI0_PA;
@@ -43,10 +44,23 @@ void setupInterrupt(){
 	
 }
 
+void setupTimer1(){
+	//Enable clock for timer 2
+	RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
+	
+	//Enable Input Capture
+	TIM2->CCMR1 &= TIM_CCMR1_CC1S;
+	TIM2->CCMR1 |= TIM_CCMR1_CC1S_0;
+	
+	//Input Caputure Filter 7 Cycles
+	TIM2->CCMR1 |= TIM_CCMR1_IC1F_2 | TIM_CCMR1_IC1F_1 | TIM_CCMR1_IC1F_0;
+	
+}
+
 void EXTI0_IRQHandler(void){
 	
 	g_pendingInterrupt = 1;
-	EXTI->PR1 &= !EXTI_PR1_PIF0;
+	EXTI->PR1 |= EXTI_PR1_PIF0;
 }
 
 int main(void){
@@ -79,9 +93,7 @@ int main(void){
 			g_pendingInterrupt = 0;
 		}
 		
-		if(GPIOA->IDR & GPIO_IDR_IDR_0){
-			USART_Write(USART2, (uint8_t *)str3, strlen(str3));
-		}
+
 		
 		
 		
