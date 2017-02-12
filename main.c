@@ -8,23 +8,30 @@
 
 char RxComByte = 0;
 uint8_t buffer[BufferSize];
-char str[] = "An interrupt Happened!!!!";
+char str[256];
 char str2[] = "My body is ready!!!!";
 char str3[] = "It is a 1!!!";
 
 int g_pendingInterrupt = 0;
+uint32_t clockT = 0;
 
 void setupGPIO(){
 	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
-	//Input from PA0
-	GPIOA->MODER &= ~GPIO_MODER_MODER0;
-	////Set Speed
-	//GPIOA->OSPEEDR |= GPIO_OSPEEDER_OSPEEDR0;
-	////Pulldown
-	//GPIOA->PUPDR &= ~GPIO_PUPDR_PUPDR0_0;
-	//GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;
 	
-	//GPIOD->AFR[0] |= 0;
+	//Input from PA0 Alternate function mode
+	GPIOA->MODER &= ~GPIO_MODER_MODER0;
+	GPIOA->MODER |= GPIO_MODER_MODER0_1;
+	
+	//Seturp Alternate Function Bologna
+	GPIOA->AFR[0] &= ~GPIO_AFRL_AFRL0;
+	GPIOA->AFR[0] |= 0x0001;
+	
+	// //Set Speed
+	// GPIOA->OSPEEDR |= GPIO_OSPEEDER_OSPEEDR0;
+	// //Pulldown
+	// GPIOA->PUPDR &= ~GPIO_PUPDR_PUPDR0_0;
+	// GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;
+
 }
 
 void setupInterrupt(){
@@ -44,22 +51,35 @@ void setupInterrupt(){
 	
 }
 
-void setupTimer1(){
+void setupTimer2(){
 	//Enable clock for timer 2
 	RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
 	
-	//Enable Input Capture
+	//Timer Prescale 80MHz / 40(0x28) -> 2MHz
+	TIM2->PSC = 0x28;
+	
+	//Generate a Flipping Event 
+	TIM2->EGR |= TIM_EGR_UG;
+	
+	//Turn off input capture
+	TIM2->CCER &= ~TIM_CCER_CC1E;
+	
+	//Enable Input Capture channels
 	TIM2->CCMR1 &= TIM_CCMR1_CC1S;
 	TIM2->CCMR1 |= TIM_CCMR1_CC1S_0;
 	
+	//Re-enable input capture
+	TIM2->CCER |= TIM_CCER_CC1E;
+	
 	//Input Caputure Filter 7 Cycles
-	TIM2->CCMR1 |= TIM_CCMR1_IC1F_2 | TIM_CCMR1_IC1F_1 | TIM_CCMR1_IC1F_0;
+	//TIM2->CCMR1 |= TIM_CCMR1_IC1F_2 | TIM_CCMR1_IC1F_1 | TIM_CCMR1_IC1F_0;
 	
 }
 
 void EXTI0_IRQHandler(void){
 	
 	g_pendingInterrupt = 1;
+	clockT = TIM2->CCR1;
 	EXTI->PR1 |= EXTI_PR1_PIF0;
 }
 
@@ -75,6 +95,7 @@ int main(void){
 	UART2_Init();
 	setupGPIO();
 	setupInterrupt();
+	setupTimer2();
 	
 	USART_Write(USART2, (uint8_t *)str2, strlen(str2));
 	
@@ -89,6 +110,7 @@ int main(void){
 //			;
 	
 		if(g_pendingInterrupt){
+			printf(str,  "An interrupt Happened!!!!\r\n Time is : %d", clockT);
 			USART_Write(USART2, (uint8_t *)str, strlen(str));
 			g_pendingInterrupt = 0;
 		}
