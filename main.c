@@ -19,7 +19,7 @@ int g_pendingInterrupt = 0;
 uint32_t clockT = 0;
 unsigned int lPeriodMS = 950;
 unsigned int hPeriodMS = 1050;
-uint8_t buckets[101];
+uint16_t buckets[101];
 
 uint16_t started = 0;
 
@@ -150,6 +150,7 @@ int setupPeriod(){
 				return 0;
 			}
 			hPeriodMS = lPeriodMS + 100;
+			break;
 		} else if( rxByte == 'n' ) break; //Break 
 		
 	}
@@ -189,6 +190,11 @@ int main(void){
 	while (1){
 		
 		while(!setupPeriod());
+		
+		char periodStr[25];
+		sprintf(periodStr, "Range is %d to %d\r\n", lPeriodMS, hPeriodMS);
+		USART_Write(USART2, (uint8_t *) periodStr, strlen(periodStr));
+		
 		for(int i = 0; i < 101; i++){
 			buckets[i] = 0;
 		}
