@@ -154,7 +154,7 @@ int setupPeriod(){
 			hPeriodMS = lPeriodMS + 100;
 			break;
 		} if( rxByte == 'n' ) break; //Break 
-		else USART_Write(USART2, (uint8_t *) "Input invalid\r\n", strlen("Input invalid\r\n"));
+		else USART_Write(USART2, (uint8_t *) "\r\nInput invalid", strlen("\r\nInput invalid"));
 		
 	}
 	
