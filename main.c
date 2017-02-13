@@ -1,3 +1,4 @@
+
 #include "stm32l476xx.h"
 #include "SysClock.h"
 #include "LED.h"
@@ -7,7 +8,7 @@
 #include <stdio.h>
 
 #define POSTERRORSTRING "ERROR: No pulse within 100ms...\r\nPOST FAILED: Please Check connections and retry...\r\n"
-#define PERIODSTRING "Lower Limit: 950us, Upper Limit: 1050us\r\n Would you like to change this? (y/n):"
+#define PERIODSTRING "Lower Limit: 950us, Upper Limit: 1050us\r\nWould you like to change this? (y/n):"
 
 char RxComByte = 0;
 uint8_t buffer[BufferSize];
@@ -129,6 +130,7 @@ int setupPeriod(){
 	while(1){
 		rxByte = USART_Read(USART2);
 		if(rxByte == 'y'){ //Set Limits
+			USART_Write(USART2, (uint8_t *) "\r\nEnter new Limits: ", strlen("\r\nEnter new Limits: "));
 			char rxByte = 0;
 			do{
 				if(rxByte) buf[i++] = rxByte;
@@ -141,7 +143,7 @@ int setupPeriod(){
 			}while(rxByte != '\r');
 				
 			if(!sscanf( buf, "%u", &lPeriodMS)){
-				USART_Write(USART2, (uint8_t *) "Input Invalid\r\n", strlen("Input Invalid\r\n"));
+				USART_Write(USART2, (uint8_t *) "\r\nInput Invalid\r\n", strlen("\r\nInput Invalid\r\n"));
 				return 0;
 			}
 			
@@ -151,7 +153,8 @@ int setupPeriod(){
 			}
 			hPeriodMS = lPeriodMS + 100;
 			break;
-		} else if( rxByte == 'n' ) break; //Break 
+		} if( rxByte == 'n' ) break; //Break 
+		else USART_Write(USART2, (uint8_t *) "Input invalid\r\n", strlen("Input invalid\r\n"));
 		
 	}
 	
