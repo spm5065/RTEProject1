@@ -6,14 +6,22 @@
 #include <string.h>
 #include <stdio.h>
 
+#define POSTERRORSTRING "ERROR: No pulse within 100ms...\r\nPOST FAILED: Please Check connections and retry...\r\n"
+#define PERIODSTRING "Lower Limit: 950us, Upper Limit: 1050us\r\n Would you like to change this? (y/n):"
+
 char RxComByte = 0;
 uint8_t buffer[BufferSize];
-char str[256];
+char str[50] = "";
 char str2[] = "My body is ready!!!!";
 char str3[] = "It is a 1!!!";
 
 int g_pendingInterrupt = 0;
 uint32_t clockT = 0;
+unsigned int lPeriodMS = 950;
+unsigned int hPeriodMS = 1050;
+uint8_t buckets[101];
+
+uint16_t started = 0;
 
 void setupGPIO(){
 	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
@@ -55,8 +63,8 @@ void setupTimer2(){
 	//Enable clock for timer 2
 	RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
 	
-	//Timer Prescale 80MHz / 40(0x28) -> 2MHz
-	TIM2->PSC = 0x28;
+	//Timer Prescale 80MHz / 80 -> 1MHz
+	TIM2->PSC = (80-1);
 	
 	//Generate a Flipping Event 
 	TIM2->EGR |= TIM_EGR_UG;
@@ -74,21 +82,93 @@ void setupTimer2(){
 	//Input Caputure Filter 7 Cycles
 	//TIM2->CCMR1 |= TIM_CCMR1_IC1F_2 | TIM_CCMR1_IC1F_1 | TIM_CCMR1_IC1F_0;
 	
+	//Enable counter
+	TIM2->CR1 = TIM_CR1_CEN;
 }
 
 void EXTI0_IRQHandler(void){
 	
 	g_pendingInterrupt = 1;
 	clockT = TIM2->CCR1;
+	TIM2->CNT = 0;
+	
+	if(started && started < 1001){
+		started++;
+		if((clockT - lPeriodMS)< 101){
+			buckets[(clockT - lPeriodMS)]++;
+		}
+	}
+	
 	EXTI->PR1 |= EXTI_PR1_PIF0;
 }
 
+int post(){
+	while(!g_pendingInterrupt){
+		if(TIM2->CNT > 100000){
+			USART_Write(USART2, (uint8_t *)POSTERRORSTRING, strlen(POSTERRORSTRING));
+			
+			//Wait for input
+			while(1)
+				if('\r' == USART_Read(USART2)) return 0;
+		}
+	}
+	
+	return 1;
+}
+
+int setupPeriod(){
+	char rxByte = 0;
+	char buf[6];
+	int i = 0;
+	
+	USART_Write(USART2, (uint8_t *) PERIODSTRING, strlen(PERIODSTRING));
+	
+	memset( buf, 0, 6); //Null the buffer
+	lPeriodMS = 950;
+	hPeriodMS = lPeriodMS + 100;
+	while(1){
+		rxByte = USART_Read(USART2);
+		if(rxByte == 'y'){ //Set Limits
+			char rxByte = 0;
+			do{
+				if(rxByte) buf[i++] = rxByte;
+				rxByte = USART_Read(USART2);
+				if(i>5) {
+					USART_Write(USART2, (uint8_t *) "Too many characters entered...resetting...\r\n", strlen("Too many characters entered...resetting...\r\n"));
+					return 0;
+				}
+
+			}while(rxByte != '\r');
+				
+			if(!sscanf( buf, "%u", &lPeriodMS)){
+				USART_Write(USART2, (uint8_t *) "Input Invalid\r\n", strlen("Input Invalid\r\n"));
+				return 0;
+			}
+			
+			if( lPeriodMS < 50 || lPeriodMS > 9950) {
+				USART_Write(USART2, (uint8_t *) "Period out of range 50 to 9950ms... Retry\r\n", strlen("Period out of range 50 to 9950ms... Retry\r\n"));
+				return 0;
+			}
+			hPeriodMS = lPeriodMS + 100;
+		} else if( rxByte == 'n' ) break; //Break 
+		
+	}
+	
+	return 1;
+}
+
+void printHistogram(){
+		USART_Write(USART2, (uint8_t *) "\r\n", strlen("\r\n"));
+		for(int i = 0; i < 101; i++){
+			if( buckets[i] > 0) {
+				char bucketStr[25];
+				sprintf(bucketStr, "%d us: %d\r\n", lPeriodMS + i, buckets[i]);
+				USART_Write(USART2, (uint8_t *) bucketStr, strlen(bucketStr));
+			}
+		}
+}
+
 int main(void){
-	char rxByte;
-	int		a ;
-	int		n ;
-	int		i ;
-	float b;
 	
 	System_Clock_Init(); // Switch System Clock = 80 MHz
 	LED_Init();
@@ -97,38 +177,27 @@ int main(void){
 	setupInterrupt();
 	setupTimer2();
 	
-	USART_Write(USART2, (uint8_t *)str2, strlen(str2));
+	//Trigger initial interrupt
+	TIM2->EGR |= TIM_EGR_UG;
 	
+	//POST
+	while(!post());
+	USART_Write(USART2, (uint8_t *) "POST SUCCEEDED\r\n", strlen("POST SUCCEEDED\r\n"));
+	
+	
+	//Run the thing
 	while (1){
-//		n = sprintf((char *)buffer, "a = %d\t", a);
-//		n += sprintf((char *)buffer + n, "b = %f\r\n", b);
-//		USART_Write(USART2, buffer, n);		
-//		a = a + 1;
-//		b = (float)a/100;
-//		// now spin for a while to slow it down
-//		for (i = 0; i < 4000000; i++)
-//			;
-	
-		if(g_pendingInterrupt){
-			printf(str,  "An interrupt Happened!!!!\r\n Time is : %d", clockT);
-			USART_Write(USART2, (uint8_t *)str, strlen(str));
-			g_pendingInterrupt = 0;
+		
+		while(!setupPeriod());
+		for(int i = 0; i < 101; i++){
+			buckets[i] = 0;
 		}
+		started = 1;
+		while(started < 1001);
 		
-
+		printHistogram();
 		
-		
-		
-//			USART_Write(USART2, (uint8_t *)str, strlen(str));	
-//			rxByte = USART_Read(USART2);
-//			if (rxByte == 'N' || rxByte == 'n'){
-//				Red_LED_Off();
-//				USART_Write(USART2, (uint8_t *)"LED is Off\r\n\r\n", 16);
-//			}
-//			else if (rxByte == 'Y' || rxByte == 'y'){
-//				Red_LED_On();
-//				USART_Write(USART2, (uint8_t *)"LED is on\r\n\r\n", 15);
-//			}
+		USART_Write(USART2, (uint8_t *) "Restarting...\r\n", strlen("Restarting...\r\n"));
 	}
 }
 
